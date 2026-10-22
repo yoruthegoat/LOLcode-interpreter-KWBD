@@ -133,7 +133,7 @@ def main():
 
 
     # print results
-    print(f"\n{'Line':<6}{'Classification':<22}Lexeme")
+    print(f"\n{'Line':<6}{'Classification':<22}{'Lexeme'}")
     print("-" * 65)
     for word, tokenType, line in tokens:
         print(f"{line:<6}{tokenType:<22}{word}")

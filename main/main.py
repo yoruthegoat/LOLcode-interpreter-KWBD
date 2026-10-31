@@ -2,39 +2,92 @@
 
 import re
 
-KEYWORDS = [
-    "HAI", "KTHXBYE", "WAZZUP", "BUHBYE", "BTW", "OBTW", "TLDR",
-    "I HAS A", "ITZ", "R", "AN", "SUM OF", "DIFF OF", "PRODUKT OF",
-    "QUOSHUNT OF", "MOD OF", "BIGGR OF", "SMALLR OF", "BOTH OF",
-    "EITHER OF", "WON OF", "NOT", "ANY OF", "ALL OF", "BOTH SAEM",
-    "DIFFRINT", "SMOOSH", "MAEK", "A", "IS NOW A", "VISIBLE", "GIMMEH",
-    "O RLY?", "YA RLY", "MEBBE", "NO WAI", "OIC", "WTF?", "OMG",
-    "OMGWTF", "IM IN YR", "UPPIN", "NERFIN", "YR", "TIL", "WILE",
-    "IM OUTTA YR", "HOW IZ I", "IF U SAY SO", "GTFO", "FOUND YR",
-    "I IZ", "MKAY"
-]
+# keyword and its classification
+KEYWORD_TYPES = {
+    "HAI": "Code Delimiter",
+    "KTHXBYE": "Code Delimiter",
+    "WAZZUP": "Variable List Delimiter",
+    "BUHBYE": "Variable List Delimiter",
+    "BTW": "Comment Delimiter",
+    "OBTW": "Comment Delimiter",
+    "TLDR": "Comment Delimiter",
+    "I HAS A": "Variable Declaration",
+    "ITZ": "Variable Assignment",
+    "R": "Assignment Operator",
+    "AN": "Operand Separator",
+    "SUM OF": "Addition Operator",
+    "DIFF OF": "Subtraction Operator",
+    "PRODUKT OF": "Multiplication Operator",
+    "QUOSHUNT OF": "Division Operator",
+    "MOD OF": "Modulo Operator",
+    "BIGGR OF": "Max Operator",
+    "SMALLR OF": "Min Operator",
+    "BOTH OF": "AND Operator",
+    "EITHER OF": "OR Operator",
+    "WON OF": "XOR Operator",
+    "NOT": "NOT Operator",
+    "ANY OF": "Infinite Arity OR",
+    "ALL OF": "Infinite Arity AND",
+    "BOTH SAEM": "Equality Operator",
+    "DIFFRINT": "Inequality Operator",
+    "SMOOSH": "Concatenation Keyword",
+    "MAEK": "Typecasting Keyword",
+    "A": "Typecasting Keyword",
+    "IS NOW A": "Typecasting Keyword",
+    "VISIBLE": "Output Keyword",
+    "GIMMEH": "Input Keyword",
+    "O RLY?": "If-Then Delimiter",
+    "YA RLY": "If Clause",
+    "MEBBE": "Else-If Clause",
+    "NO WAI": "Else Clause",
+    "OIC": "Conditional Delimiter",
+    "WTF?": "Switch Delimiter",
+    "OMG": "Case Keyword",
+    "OMGWTF": "Default Case Keyword",
+    "IM IN YR": "Loop Delimiter",
+    "IM OUTTA YR": "Loop Delimiter",
+    "UPPIN": "Increment Keyword",
+    "NERFIN": "Decrement Keyword",
+    "YR": "Parameter Delimiter",
+    "TIL": "Loop Condition",
+    "WILE": "Loop Condition",
+    "HOW IZ I": "Function Delimiter",
+    "IF U SAY SO": "Function Delimiter",
+    "GTFO": "Break Keyword",
+    "FOUND YR": "Return Keyword",
+    "I IZ": "Function Call",
+    "MKAY": "Infinite Arity Delimiter"
+}
 # check longer keywords first
-KEYWORDS = sorted(KEYWORDS, key=len, reverse=True)
+KEYWORDS = sorted(KEYWORD_TYPES, key=len, reverse=True)
+
+# identifiers that name a function or loop instead of a variable
+IDENTIFIER_AFTER = {
+    "HOW IZ I": "Function Identifier",
+    "I IZ": "Function Identifier",
+    "IM IN YR": "Loop Identifier",
+    "IM OUTTA YR": "Loop Identifier"
+}
 
 
 def classify(word):
     # fullmatch checks the whole word, so 12abc will not match a number
     if re.fullmatch(r"WIN|FAIL", word):
-        return "TROOF Literal"
+        return "Literal"
     if re.fullmatch(r"NOOB|NUMBR|NUMBAR|YARN|TROOF", word):
-        return "TYPE Literal"
+        return "Type Literal"
 
     # optional minus sign followed by digits
     if re.fullmatch(r"-?[0-9]+", word):
-        return "NUMBR Literal"
+        return "Literal"
 
     # decimal point needs at least one digit after it
     if re.fullmatch(r"-?[0-9]*\.[0-9]+", word):
-        return "NUMBAR Literal"
+        return "Literal"
 
     # starts with a letter, then letters, digits, or underscores
     if re.fullmatch(r"[a-zA-Z][a-zA-Z0-9_]*", word):
-        return "Identifier"
+        return "Variable Identifier"
     return "Invalid"
 
 
@@ -55,7 +108,7 @@ def scan(source):
             # skip comment body until TLDR
             if commentLine != 0:
                 if line[i:].split()[0] == "TLDR":
-                    tokens.append(("TLDR", "Keyword", lineNum))
+                    tokens.append(("TLDR", KEYWORD_TYPES["TLDR"], lineNum))
                     commentLine = 0
                 break
 
@@ -70,7 +123,10 @@ def scan(source):
                     errors.append((lineNum, "Missing closing quote."))
                     break
                 i += 1
-                tokens.append((line[start:i], "YARN Literal", lineNum))
+                # quotes are delimiters, the text between them is the literal
+                tokens.append(('"', "String Delimiter", lineNum))
+                tokens.append((line[start+1:i-1], "Literal", lineNum))
+                tokens.append(('"', "String Delimiter", lineNum))
                 continue
 
             # check keywords
@@ -83,7 +139,7 @@ def scan(source):
                         break
 
             if keyword != "":
-                tokens.append((keyword, "Keyword", lineNum))
+                tokens.append((keyword, KEYWORD_TYPES[keyword], lineNum))
                 i+= len(keyword)
                 if keyword == "BTW":
                     break
@@ -97,7 +153,7 @@ def scan(source):
                 continue
 
             if line[i] == "+":
-                tokens.append(("+", "Output separator", lineNum))
+                tokens.append(("+", "Output Separator", lineNum))
                 i += 1
                 continue
 
@@ -111,6 +167,9 @@ def scan(source):
             if tokenType == "Invalid":
                 errors.append((lineNum, "Invalid lexeme: " + word))
             else:
+                # name right after HOW IZ I, I IZ, or IM IN YR
+                if tokenType == "Variable Identifier" and tokens and tokens[-1][2] == lineNum:
+                    tokenType = IDENTIFIER_AFTER.get(tokens[-1][0], tokenType)
                 tokens.append((word, tokenType, lineNum))
 
     if commentLine != 0:
@@ -133,10 +192,10 @@ def main():
 
 
     # print results
-    print(f"\n{'Line':<6}{'Classification':<22}Lexeme")
-    print("-" * 65)
+    print(f"\n{'Line':<6}{'Classification':<28}Lexeme")
+    print("-" * 70)
     for word, tokenType, line in tokens:
-        print(f"{line:<6}{tokenType:<22}{word}")
+        print(f"{line:<6}{tokenType:<28}{word}")
     for line, message in errors:
         print("Error on line", str(line) + ":", message)
     print("\nTokens:", len(tokens), "| Lexical errors:", len(errors))

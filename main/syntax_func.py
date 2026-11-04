@@ -1,6 +1,6 @@
 #CMSC 124 milestone 2 (syntax analyzer)
 
-from main import scan
+from grammar_func import scan
 
 # All operations except SMOOSH, ALL OF, ANY OF, and NOT are binary
 BINARY = ["SUM OF", "DIFF OF", "PRODUKT OF", "QUOSHUNT OF", "MOD OF", "BIGGR OF",
@@ -156,7 +156,6 @@ def expression(tokens, pos, lines, depth):
 
     return pos
 
-
 def codeBlock(tokens, pos, lines, depth, stopWords):
     # read till stop word is found
     saveLine(lines, depth, "<Code Block>")
@@ -302,35 +301,3 @@ def program(tokens, lines):
 
     pos = codeBlock(tokens, pos, lines, 2, [])
     pos = expectToken(tokens, pos, lines, 2, "KTHXBYE")
-
-
-def main():
-    fileName = input("Enter the .lol file path: ").strip()
-    try:
-        with open(fileName, "r", encoding="utf-8-sig") as fp:
-            source = fp.read()
-    except (OSError, UnicodeError) as error:
-        print("Cannot read file:", error)
-        return
-
-    # milestone 1 lexical analyzer
-    scannedTokens, errors = scan(source)
-    if len(errors) > 0:
-        for line, message in errors:
-            print("Error on line", str(line) + ":", message)
-        return
-
-    # ignore comments
-    tokens = []
-    for token in scannedTokens:
-        if token[1] != "Comment Delimiter":
-            tokens.append(token)
-
-    lines = []
-    program(tokens, lines)
-    printTree(lines)
-    print("\nNo syntax errors.")
-
-
-if __name__ == "__main__":
-    main()

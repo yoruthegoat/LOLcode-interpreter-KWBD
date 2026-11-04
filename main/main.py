@@ -1,4 +1,4 @@
-import grammar_func, syntax_func;
+import grammar_func, syntax_func
 
 def main():
     fileName = input("Enter the .lol file path: ").strip()
@@ -22,10 +22,13 @@ def main():
         if token[1] != "Comment Delimiter":
             tokens.append(token)
 
-    lines = []
-    syntax_func.program(tokens, lines)
-    syntax_func.printTree(lines)
-    print("\nNo syntax errors.")
+    # milestone 2 syntax analyzer
+    lines, error = syntax_func.parse(tokens)
+    print(syntax_func.printTree(lines))
+    if error is None:
+        print("\nNo syntax errors.")
+    else:
+        print("\n" + str(error))
 
 
 if __name__ == "__main__":

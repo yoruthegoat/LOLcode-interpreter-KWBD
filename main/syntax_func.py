@@ -6,19 +6,6 @@ from grammar_func import scan
 BINARY = ["SUM OF", "DIFF OF", "PRODUKT OF", "QUOSHUNT OF", "MOD OF", "BIGGR OF",
           "SMALLR OF", "BOTH OF", "EITHER OF", "WON OF", "BOTH SAEM", "DIFFRINT"]
 
-# Custom exception class for syntax errors
-class LolSyntaxError(Exception):
-    def __init__(self, message, line=None, found=None):
-        super().__init__(message)
-        self.message = message
-        self.line = line
-        self.found = found
-    
-    def __str__(self):
-        if self.line is None:
-            return f"Syntax error - {self.message} (the file ended too early)"
-        return f"Syntax error on line {self.line} - {self.message} (found '{self.found}')"
-
 def saveLine(lines, depth, text):
     lines.append([depth, text])
 
@@ -35,9 +22,13 @@ def getTokenType(tokens, pos):
     return ""
 
 def syntaxError(tokens, pos, lines, message):
-    if pos < len(tokens): # prints the error then exits
-        raise LolSyntaxError(message, tokens[pos][2], tokens[pos][0])
-    raise LolSyntaxError(message)
+    # stop parsing and pass the message to the gui or terminal
+    if pos < len(tokens):
+        errorMessage = ("Syntax error on line " + str(tokens[pos][2]) + " - " + message
+                        + " (found '" + tokens[pos][0] + "')")
+    else:
+        errorMessage = "Syntax error - " + message + " (the file ended too early)"
+    exit(errorMessage)
 
 
 def hasMoreSiblings(lines, i, d):
@@ -309,7 +300,7 @@ def parse(tokens):
     try:
         program(tokens, lines)
         return lines, None
-    except LolSyntaxError as e:
-        return lines, e
+    except SystemExit as error:
+        return lines, str(error)
     except RecursionError:
-        return lines, LolSyntaxError("Maximum recursion depth exceeded")
+        return lines, "Syntax error - Maximum recursion depth exceeded"

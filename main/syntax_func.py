@@ -1,11 +1,23 @@
 #CMSC 124 milestone 2 (syntax analyzer)
 
-from main import scan
+from grammar_func import scan
 
 # All operations except SMOOSH, ALL OF, ANY OF, and NOT are binary
 BINARY = ["SUM OF", "DIFF OF", "PRODUKT OF", "QUOSHUNT OF", "MOD OF", "BIGGR OF",
           "SMALLR OF", "BOTH OF", "EITHER OF", "WON OF", "BOTH SAEM", "DIFFRINT"]
 
+# Custom exception class for syntax errors
+class LolSyntaxError(Exception):
+    def __init__(self, message, line=None, found=None):
+        super().__init__(message)
+        self.message = message
+        self.line = line
+        self.found = found
+    
+    def __str__(self):
+        if self.line is None:
+            return f"Syntax error - {self.message} (the file ended too early)"
+        return f"Syntax error on line {self.line} - {self.message} (found '{self.found}')"
 
 def saveLine(lines, depth, text):
     lines.append([depth, text])
@@ -23,13 +35,9 @@ def getTokenType(tokens, pos):
     return ""
 
 def syntaxError(tokens, pos, lines, message):
-    # prints the parse tree obtained so far
-    printTree(lines)
     if pos < len(tokens): # prints the error then exits
-        print("\nSyntax error on line", tokens[pos][2], "-", message, "(found '" + tokens[pos][0] + "')")
-    else:
-        print("\nSyntax error -", message, "(the file ended too early)")
-    exit()
+        raise LolSyntaxError(message, tokens[pos][2], tokens[pos][0])
+    raise LolSyntaxError(message)
 
 
 def hasMoreSiblings(lines, i, d):
@@ -42,21 +50,16 @@ def hasMoreSiblings(lines, i, d):
     return False
 
 def printTree(lines):
+    out = []
     for i in range(len(lines)):
         depth = lines[i][0]
         prefix = ""
         # vertical bars of the parent levels
         for j in range(1, depth):
-            if hasMoreSiblings(lines, i, j):
-                prefix += "│   "
-            else:
-                prefix += "    "
-        # the branch of this line
-        if hasMoreSiblings(lines, i, depth):
-            prefix += "├── "
-        else:
-            prefix += "└── "
-        print(prefix + lines[i][1])
+            prefix += "│   " if hasMoreSiblings(lines, i, j) else "    "
+        prefix += "├── " if hasMoreSiblings(lines, i, depth) else "└── "
+        out.append(prefix + lines[i][1])
+    return "\n".join(out)
 
 def nextToken(tokens, pos, lines, depth):
     # add the current token to the tree and return the position of the next token
@@ -155,7 +158,6 @@ def expression(tokens, pos, lines, depth):
         syntaxError(tokens, pos, lines, "Expected an expression")
 
     return pos
-
 
 def codeBlock(tokens, pos, lines, depth, stopWords):
     # read till stop word is found
@@ -279,7 +281,6 @@ def statement(tokens, pos, lines, depth):
     return pos
 
 
-
 def program(tokens, lines):
     pos = 0
     saveLine(lines, 1, "<Program>")
@@ -303,34 +304,12 @@ def program(tokens, lines):
     pos = codeBlock(tokens, pos, lines, 2, [])
     pos = expectToken(tokens, pos, lines, 2, "KTHXBYE")
 
-
-def main():
-    fileName = input("Enter the .lol file path: ").strip()
-    try:
-        with open(fileName, "r", encoding="utf-8-sig") as fp:
-            source = fp.read()
-    except (OSError, UnicodeError) as error:
-        print("Cannot read file:", error)
-        return
-
-    # milestone 1 lexical analyzer
-    scannedTokens, errors = scan(source)
-    if len(errors) > 0:
-        for line, message in errors:
-            print("Error on line", str(line) + ":", message)
-        return
-
-    # ignore comments
-    tokens = []
-    for token in scannedTokens:
-        if token[1] != "Comment Delimiter":
-            tokens.append(token)
-
+def parse(tokens):
     lines = []
-    program(tokens, lines)
-    printTree(lines)
-    print("\nNo syntax errors.")
-
-
-if __name__ == "__main__":
-    main()
+    try:
+        program(tokens, lines)
+        return lines, None
+    except LolSyntaxError as e:
+        return lines, e
+    except RecursionError:
+        return lines, LolSyntaxError("Maximum recursion depth exceeded")

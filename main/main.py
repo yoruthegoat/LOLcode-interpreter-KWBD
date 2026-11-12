@@ -16,14 +16,8 @@ def main():
             print("Error on line", str(line) + ":", message)
         return
 
-    # ignore comments
-    tokens = []
-    for token in scannedTokens:
-        if token[1] != "Comment Delimiter":
-            tokens.append(token)
-
     # milestone 2 syntax analyzer
-    lines, error = syntax_func.parse(tokens)
+    lines, error = syntax_func.parse(scannedTokens)
     print(syntax_func.printTree(lines))
     if error is None:
         print("\nNo syntax errors.")

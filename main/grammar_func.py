@@ -110,6 +110,9 @@ def scan(source):
                 if line[i:].split()[0] == "TLDR":
                     tokens.append(("TLDR", KEYWORD_TYPES["TLDR"], lineNum))
                     commentLine = 0
+                    # keep trailing tokens so syntax analysis can check this line
+                    i += len("TLDR")
+                    continue
                 break
 
             start= i

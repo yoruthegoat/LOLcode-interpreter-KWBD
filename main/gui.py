@@ -234,8 +234,7 @@ class MainWindow(QMainWindow):
             return
 
         # Syntax Analysis
-        tokens = [t for t in scanned if t[1] != "Comment Delimiter"]
-        lines, error = syntax_func.parse(tokens)
+        lines, error = syntax_func.parse(scanned)
         self.fillTree(lines)
         if error:
             self.console.appendPlainText(str(error))

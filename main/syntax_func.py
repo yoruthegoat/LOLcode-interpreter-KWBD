@@ -177,6 +177,16 @@ def expressionValue(tokens, pos, lines, depth, allowVariadic):
 
     return pos
 
+def previousIsExpression(lines, depth):
+    # statements of the same block are saved at the same depth of the tree
+    # so look back for the last one at this depth, stopping at the start of the block
+    for i in range(len(lines) - 1, -1, -1):
+        if lines[i][0] < depth:
+            return False
+        if lines[i][0] == depth:
+            return lines[i][1] == "<Expression Statement>"
+    return False
+
 def codeBlock(tokens, pos, lines, depth, stopWords, inFunction=False,
               canBreak=False, allowFunctions=False):
     # read till stop word is found
@@ -231,6 +241,9 @@ def statement(tokens, pos, lines, depth, inFunction=False, canBreak=False,
         while getTokenType(tokens, pos) == "Output Separator":
             pos = nextToken(tokens, pos, lines, depth + 1)
             pos = expression(tokens, pos, lines, depth + 1)
+        # a trailing ! suppresses the newline
+        if getTokenType(tokens, pos) == "Newline Suppressor" and tokens[pos][2] == tokens[start][2]:
+            pos = nextToken(tokens, pos, lines, depth + 1)
         checkEndOfLine(tokens, pos, lines)
 
     elif text == "GIMMEH":
@@ -256,12 +269,23 @@ def statement(tokens, pos, lines, depth, inFunction=False, canBreak=False,
         checkEndOfLine(tokens, pos, lines)
 
     elif text == "O RLY?":
+        # O RLY? checks IT, so an expression statement must come right before it
+        if not previousIsExpression(lines, depth):
+            syntaxError(tokens, pos, lines, "O RLY? must come right after an expression")
         saveLine(lines, depth, "<If-Then Statement>")
         pos = nextToken(tokens, pos, lines, depth + 1)
         checkEndOfLine(tokens, pos, lines)
         pos = expectToken(tokens, pos, lines, depth + 1, "YA RLY")
         checkEndOfLine(tokens, pos, lines)
-        pos = codeBlock(tokens, pos, lines, depth + 1, ["NO WAI", "OIC"], inFunction, canBreak)
+        pos = codeBlock(tokens, pos, lines, depth + 1, ["MEBBE", "NO WAI", "OIC"], inFunction, canBreak)
+        # optional else-if clauses, each with its condition on the same line
+        while word(tokens, pos) == "MEBBE":
+            mebbeStart = pos
+            pos = nextToken(tokens, pos, lines, depth + 1)
+            pos = expression(tokens, pos, lines, depth + 1)
+            checkSameLine(tokens, mebbeStart, pos, lines)
+            checkEndOfLine(tokens, pos, lines)
+            pos = codeBlock(tokens, pos, lines, depth + 1, ["MEBBE", "NO WAI", "OIC"], inFunction, canBreak)
         if word(tokens, pos) == "NO WAI":
             pos = nextToken(tokens, pos, lines, depth + 1)
             checkEndOfLine(tokens, pos, lines)

@@ -9,6 +9,10 @@ BOOLEAN = ["BOTH OF", "EITHER OF", "WON OF"]
 COMPARISON = ["BOTH SAEM", "DIFFRINT"]
 BLOCK_ENDS = {"O RLY?": "OIC", "WTF?": "OIC", "IM IN YR": "IM OUTTA YR", "HOW IZ I": "IF U SAY SO"}
 
+# optional function given to run(), called before every statement
+# the gui uses it to keep the window responsive and to stop an endless loop
+stepCallback = None
+
 def semanticError(tokens, pos, message):
     # report the line where the semantic check failed
     if pos < len(tokens):
@@ -68,6 +72,11 @@ def getValue(tokens, pos, variables, outputLines, askInput, functions):
             return value, pos, error
         if text in BOOLEAN:
             return boolean(text, left, right), pos, None
+        # comparisons only take NUMBR or NUMBAR operands and never typecast them
+        for operand in (left, right):
+            if getType(operand) not in ("NUMBR", "NUMBAR"):
+                message = text + " only compares NUMBR or NUMBAR values (found " + getType(operand) + ")"
+                return None, pos, semanticError(tokens, operatorPos, message)
         if text == "BOTH SAEM":
             return isEqual(left, right), pos, None
         return not isEqual(left, right), pos, None
@@ -115,11 +124,9 @@ def getValue(tokens, pos, variables, outputLines, askInput, functions):
         return "".join(parts), pos, None
 
     if text == "MAEK":
-        # maek [a] value [a] type
+        # maek value [a] type
         operatorPos = pos
         pos += 1
-        if syntax.word(tokens, pos) == "A":
-            pos += 1
         value, pos, error = getValue(tokens, pos, variables, outputLines, askInput, functions)
         if error:
             return None, pos, error
@@ -154,8 +161,7 @@ def callFunction(tokens, pos, variables, outputLines, askInput, functions):
             if error:
                 return None, pos, error
             arguments.append(value)
-    if syntax.word(tokens, pos) == "MKAY":
-        pos += 1
+    pos += 1  # mkay, the parser already checked that it is there
 
     parameters, bodyPos = functions[name]
     if len(arguments) != len(parameters):
@@ -208,6 +214,16 @@ def toYarn(value, tokens, pos):
         point = text.find(".")
         return text[:point + 3], None
     return str(value), None
+
+
+def formatValue(value):
+    # how a value is shown in the symbol table
+    valueType = getType(value)
+    if valueType == "NOOB":
+        return "NOOB"
+    if valueType == "TROOF":
+        return "WIN" if value else "FAIL"
+    return str(value)
 
 
 def toNumber(text, tokens, pos):
@@ -288,7 +304,7 @@ def castTo(value, typeName, tokens, pos):
     return toFloat(number, tokens, pos)
 
 
-def declaration(tokens, pos, variables):
+def declaration(tokens, pos, variables, outputLines, askInput, functions):
     # add a variable after checking its name and initial value
     name = tokens[pos + 1][0]
     if name in variables:
@@ -296,7 +312,7 @@ def declaration(tokens, pos, variables):
     pos += 2
     value = None
     if syntax.word(tokens, pos) == "ITZ":
-        value, pos, error = getValue(tokens, pos + 1, variables)
+        value, pos, error = getValue(tokens, pos + 1, variables, outputLines, askInput, functions)
         if error:
             return pos, error
     variables[name] = value
@@ -306,6 +322,8 @@ def declaration(tokens, pos, variables):
 def codeBlock(tokens, pos, variables, outputLines, askInput, functions, stopWords):
     # run statements until a stop word, a gtfo or found yr ends the block early
     while pos < len(tokens) and syntax.word(tokens, pos) not in stopWords and syntax.word(tokens, pos) != "KTHXBYE":
+        if stepCallback is not None:
+            stepCallback()
         pos, signal, error = statement(tokens, pos, variables, outputLines, askInput, functions)
         if error:
             return pos, "", error
@@ -321,33 +339,37 @@ def statement(tokens, pos, variables, outputLines, askInput, functions):
     signal = ""
 
     if text == "VISIBLE":
+        # operands are separated by + and each is cast to a YARN
+        # a NOOB operand is an error since NOOB can only be implicitly cast to TROOF
+        line = tokens[pos][2]
         pos += 1
-        valuePos = pos
-        value, pos, error = getValue(tokens, pos, variables, outputLines, askInput, functions)
-        if error:
-            return pos, "", error
-        text, error = toYarn(value, tokens, valuePos)
-        if error:
-            return pos, "", error
-        parts = [text]
-        while syntax.getTokenType(tokens, pos) == "Output Separator" or syntax.word(tokens, pos) == "AN":
-            pos += 1
+        parts = []
+        while True:
             valuePos = pos
             value, pos, error = getValue(tokens, pos, variables, outputLines, askInput, functions)
             if error:
                 return pos, "", error
-            text, error = toYarn(value, tokens, valuePos)
+            piece, error = toYarn(value, tokens, valuePos)
             if error:
                 return pos, "", error
-            parts.append(text)
-        outputLines.append("".join(parts))
+            parts.append(piece)
+            if syntax.getTokenType(tokens, pos) != "Output Separator":
+                break
+            pos += 1
+        # a trailing ! leaves out the newline
+        ending = "\n"
+        if (pos < len(tokens) and tokens[pos][2] == line
+                and syntax.getTokenType(tokens, pos) == "Newline Suppressor"):
+            ending = ""
+            pos += 1
+        outputLines.append("".join(parts) + ending)
 
     elif text == "GIMMEH":
         name = tokens[pos + 1][0]
         if name not in variables:
             return pos, "", semanticError(tokens, pos + 1, "Undeclared variable: " + name)
         # the input is always a yarn
-        value = askInput()
+        value = askInput(name)
         if value is None:
             value = ""
         variables[name] = value
@@ -375,15 +397,28 @@ def statement(tokens, pos, variables, outputLines, askInput, functions):
         pos += 3
 
     elif text == "O RLY?":
-        # run the YA RLY part if IT is WIN, otherwise run the NO WAI part
+        # run YA RLY if IT is WIN, else the first MEBBE whose condition is WIN, else NO WAI
         pos += 2
+        clauseEnds = ["MEBBE", "NO WAI", "OIC"]
         if toTroof(variables["IT"]):
-            pos, signal, error = codeBlock(tokens, pos, variables, outputLines, askInput, functions, ["NO WAI", "OIC"])
+            pos, signal, error = codeBlock(tokens, pos, variables, outputLines, askInput, functions, clauseEnds)
             if error:
                 return pos, "", error
         else:
-            pos = skipBlock(tokens, pos, ["NO WAI", "OIC"])
-            if syntax.word(tokens, pos) == "NO WAI":
+            pos = skipBlock(tokens, pos, clauseEnds)
+            ranClause = False
+            while syntax.word(tokens, pos) == "MEBBE":
+                value, pos, error = getValue(tokens, pos + 1, variables, outputLines, askInput, functions)
+                if error:
+                    return pos, "", error
+                if toTroof(value):
+                    pos, signal, error = codeBlock(tokens, pos, variables, outputLines, askInput, functions, clauseEnds)
+                    if error:
+                        return pos, "", error
+                    ranClause = True
+                    break
+                pos = skipBlock(tokens, pos, clauseEnds)
+            if not ranClause and syntax.word(tokens, pos) == "NO WAI":
                 pos, signal, error = codeBlock(tokens, pos + 1, variables, outputLines, askInput, functions, ["OIC"])
                 if error:
                     return pos, "", error
@@ -433,6 +468,9 @@ def statement(tokens, pos, variables, outputLines, askInput, functions):
         bodyPos = pos
 
         while True:
+            # also counts as a step, so a loop with an empty body can still be stopped
+            if stepCallback is not None:
+                stepCallback()
             pos = loopStart
             # the condition is checked before every run of the body
             if conditionType != "":
@@ -530,12 +568,22 @@ def findFunctions(tokens):
     return functions, None
 
 
-def run(tokens, variables, outputLines, askInput):
+def run(tokens, variables, outputLines, askInput, onStep=None):
     # run the program after the syntax check, returns an error message or None
+    # outputLines gets each printed piece through append, askInput(name) returns the typed YARN
+    # onStep (optional) is called before every statement
+    global stepCallback
+    stepCallback = onStep
+    tokens = [token for token in tokens if token[1] != "Comment Delimiter"]
     functions, error = findFunctions(tokens)
     if error:
         return error
-    pos = 1
+
+    # skip function definitions written before HAI, they were already collected
+    pos = 0
+    while syntax.word(tokens, pos) == "HOW IZ I":
+        pos = skipBlock(tokens, pos + 1, ["IF U SAY SO"]) + 1
+    pos += 1  # hai
 
     if syntax.word(tokens, pos) == "WAZZUP":
         pos += 1
@@ -554,9 +602,7 @@ def run(tokens, variables, outputLines, askInput):
         return semanticError(tokens, pos - 1, "GTFO is only allowed inside a loop, switch, or function")
     if signal == "RETURN":
         return semanticError(tokens, pos - 1, "FOUND YR is only allowed inside a function")
-    pos += 1  # kthxbye
-    if pos < len(tokens):
-        return semanticError(tokens, pos, "Functions outside HAI and KTHXBYE are not supported yet")
+    # anything after KTHXBYE is a function definition (checked by the parser)
     return None
 
 
@@ -633,39 +679,3 @@ def arithmetic(operator, left, right, tokens, pos):
         return None, semanticError(tokens, pos, "NUMBAR result is too large")
     return result, None
 
-
-def analyze(tokens):
-    # start each run with a fresh symbol table
-    variables = {"IT": None}
-    outputLines = []
-
-    # finish syntax checks before changing any values
-    lines, error = syntax.parse(tokens)
-    if error:
-        return variables, outputLines, error
-    tokens = [token for token in tokens if token[1] != "Comment Delimiter"]
-
-    # functions outside the program belong to a later step
-    if syntax.word(tokens, 0) != "HAI":
-        error = semanticError(tokens, 0, "Function definitions are not supported yet")
-        return variables, outputLines, error
-    pos = 1
-
-    if syntax.word(tokens, pos) == "WAZZUP":
-        pos += 1
-        while syntax.word(tokens, pos) == "I HAS A":
-            pos, error = declaration(tokens, pos, variables)
-            if error:
-                return variables, outputLines, error
-        pos += 1  # buhbye
-
-    while syntax.word(tokens, pos) != "KTHXBYE":
-        pos, error = statement(tokens, pos, variables, outputLines)
-        if error:
-            return variables, outputLines, error
-    pos += 1
-    if pos < len(tokens):
-        error = semanticError(tokens, pos, "Function definitions are not supported yet")
-        return variables, outputLines, error
-
-    return variables, outputLines, None

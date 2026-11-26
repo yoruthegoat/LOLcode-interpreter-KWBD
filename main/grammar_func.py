@@ -137,7 +137,7 @@ def scan(source):
             for candidate in KEYWORDS:
                 end = i+len(candidate)
                 if line[i:end] == candidate:
-                    if end == len(line) or line[end].isspace() or line[end] in '\"+':
+                    if end == len(line) or line[end].isspace() or line[end] in '\"+!':
                         keyword = candidate
                         break
 
@@ -160,9 +160,15 @@ def scan(source):
                 i += 1
                 continue
 
+            # a ! at the end of VISIBLE keeps the cursor on the same line
+            if line[i] == "!":
+                tokens.append(("!", "Newline Suppressor", lineNum))
+                i += 1
+                continue
+
             # read word and check its type
             while i < len(line):
-                if line[i].isspace() or line[i] in '\"+':
+                if line[i].isspace() or line[i] in '\"+!':
                     break
                 i += 1
             word=line[start:i]

@@ -4,9 +4,9 @@ from PySide6.QtWidgets import (
     QPlainTextEdit, QTableWidget, QTableWidgetItem, QPushButton, QLabel,
     QFileDialog, QInputDialog, QHeaderView, QTreeWidget, QTreeWidgetItem, QTabWidget
 )
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QFont, QTextCursor
 from PySide6.QtCore import Qt
-import grammar_func, syntax_func, interpreter_func
+import grammar_func, syntax_func, semantic_func
 
 THEME = """
 QMainWindow {
@@ -34,6 +34,10 @@ QPushButton:hover {
 }
 QPushButton:pressed {
     background-color: #094771;
+}
+QPushButton:disabled {
+    background-color: #3c3c3c;
+    color: #888888;
 }
 
 /* Text Editors & Console */
@@ -101,6 +105,35 @@ QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
 
 """
 
+class ConsoleOutput:
+    # passed to the semantic analyzer as its output, so VISIBLE shows up right away
+    def __init__(self, console):
+        self.console = console
+
+    def append(self, text):
+        self.console.moveCursor(QTextCursor.End)
+        self.console.insertPlainText(text)
+        self.console.moveCursor(QTextCursor.End)
+        QApplication.processEvents()
+
+
+class LiveVariables(dict):
+    # the symbol table used during a run, it reports every new or changed value to the window
+    def __init__(self, onChange):
+        super().__init__()
+        self.onChange = onChange
+        self["IT"] = None
+
+    def __setitem__(self, name, value):
+        super().__setitem__(name, value)
+        self.onChange(name, value)
+
+
+class StopRun(Exception):
+    # raised inside a run when the Stop button was pressed
+    pass
+
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -118,6 +151,12 @@ class MainWindow(QMainWindow):
         
         # Run Button
         self.runButton = QPushButton("Run")
+
+        # Stop Button (only enabled while a program runs)
+        self.stopButton = QPushButton("Stop")
+        self.stopButton.setEnabled(False)
+        self.stopRequested = False
+        self.steps = 0
         # -----------------------------------------------------------------------------
 
 
@@ -134,8 +173,9 @@ class MainWindow(QMainWindow):
         self.tokenTable.setHorizontalHeaderLabels(["Lexeme", "Classification"])
 
         # Symbols table
-        self.symbolTable = QTableWidget(0, 2)
-        self.symbolTable.setHorizontalHeaderLabels(["Symbol", "Value"])
+        self.symbolTable = QTableWidget(0, 3)
+        self.symbolTable.setHorizontalHeaderLabels(["Identifier", "Value", "Type"])
+        self.symbolRows = {}    # variable name -> its row in the symbol table
 
         # Tree view for parse tree
         self.treeWidget = QTreeWidget()
@@ -169,13 +209,17 @@ class MainWindow(QMainWindow):
         topRow.addWidget(self.openButton)
         topRow.addWidget(self.pathLabel, 1)
         topRow.addWidget(self.runButton)
+        topRow.addWidget(self.stopButton)
 
-        # Right Column
+        # Right Column (tokens and symbol table side by side, parse tree below)
+        tableSplit = QSplitter(Qt.Horizontal)
+        tableSplit.addWidget(self.tokenTable)
+        tableSplit.addWidget(self.symbolTable)
+
         rightSplit = QSplitter(Qt.Vertical)
-        rightSplit.addWidget(self.tokenTable)
-        # Hide the symbol table for now
-        # rightSplit.addWidget(self.symbolTable)
+        rightSplit.addWidget(tableSplit)
         rightSplit.addWidget(self.treeWidget)
+        rightSplit.setSizes([400, 200])
 
         # Horizontal Splitter (Source editor: left , Inspection panels: right)
         middleSplit = QSplitter(Qt.Horizontal)
@@ -186,7 +230,7 @@ class MainWindow(QMainWindow):
         mainSplit = QSplitter(Qt.Vertical)
         mainSplit.addWidget(middleSplit)
         mainSplit.addWidget(self.console)
-        mainSplit.setSizes([500, 100])
+        mainSplit.setSizes([450, 250])
 
         layout = QVBoxLayout()
         layout.addLayout(topRow)
@@ -198,6 +242,7 @@ class MainWindow(QMainWindow):
 
         self.openButton.clicked.connect(self.onOpen)
         self.runButton.clicked.connect(self.onRun)
+        self.stopButton.clicked.connect(self.onStop)
 
     def fillTree(self, lines):
         # Populates the parse tree widget with hierarchal depth nodes
@@ -219,6 +264,7 @@ class MainWindow(QMainWindow):
         self.console.clear()    # Reset output views for every run
         self.tokenTable.setRowCount(0)
         self.symbolTable.setRowCount(0)
+        self.symbolRows = {}
         self.treeWidget.clear()
 
         # Fetch source code from editor
@@ -240,6 +286,58 @@ class MainWindow(QMainWindow):
             self.console.appendPlainText(str(error))
             return
 
+        # Semantic analysis (runs the program)
+        # the symbol table fills itself as values change (see LiveVariables)
+        variables = LiveVariables(self.updateSymbol)
+        self.stopRequested = False
+        self.steps = 0
+        self.runButton.setEnabled(False)
+        self.stopButton.setEnabled(True)
+        try:
+            error = semantic_func.run(scanned, variables, ConsoleOutput(self.console),
+                                      self.askInput, self.onStep)
+        except RecursionError:
+            error = "Semantic error - Maximum recursion depth exceeded"
+        except StopRun:
+            error = "Program stopped by the user"
+        finally:
+            self.runButton.setEnabled(True)
+            self.stopButton.setEnabled(False)
+        if error:
+            self.printLine(str(error))
+
+    def onStep(self):
+        # called before every statement, lets the window redraw and the Stop button work
+        self.steps += 1
+        if self.steps % 200 == 0:
+            QApplication.processEvents()
+        if self.stopRequested:
+            raise StopRun()
+
+    def onStop(self):
+        self.stopRequested = True
+
+    def closeEvent(self, event):
+        # closing the window also ends a running program
+        self.stopRequested = True
+        event.accept()
+
+    def askInput(self, name):
+        # GIMMEH: ask for the input in a dialog
+        text, ok = QInputDialog.getText(self, "GIMMEH", "Enter a value for " + name + ":")
+        if not ok:
+            text = ""
+        # echo the input so the console reads like a terminal
+        ConsoleOutput(self.console).append(text + "\n")
+        return text
+
+    def printLine(self, text):
+        # start on a new line if the last VISIBLE ended with !
+        current = self.console.toPlainText()
+        if current and not current.endswith("\n"):
+            text = "\n" + text
+        ConsoleOutput(self.console).append(text + "\n")
+
     def fillTokens(self, tokens):
         # Populate the lexical token table widget
         self.tokenTable.setRowCount(len(tokens))
@@ -247,12 +345,18 @@ class MainWindow(QMainWindow):
             self.tokenTable.setItem(row, 0, QTableWidgetItem(str(token[0])))
             self.tokenTable.setItem(row, 1, QTableWidgetItem(str(token[1])))
 
-    # Not implemented yet
-    """def fillSymbols(self, variables):             
-        self.symbolTable.setRowCount(len(variables))
-        for row, (name, value) in enumerate(variables.items()):
+    def updateSymbol(self, name, value):
+        # add a new variable as a row, or update the row of an existing one
+        row = self.symbolRows.get(name)
+        if row is None:
+            row = self.symbolTable.rowCount()
+            self.symbolTable.insertRow(row)
+            self.symbolRows[name] = row
             self.symbolTable.setItem(row, 0, QTableWidgetItem(name))
-            self.symbolTable.setItem(row, 1, QTableWidgetItem(str(value)))"""
+            self.symbolTable.setItem(row, 1, QTableWidgetItem())
+            self.symbolTable.setItem(row, 2, QTableWidgetItem())
+        self.symbolTable.item(row, 1).setText(semantic_func.formatValue(value))
+        self.symbolTable.item(row, 2).setText(semantic_func.getType(value))
 
 
 if __name__ == "__main__":

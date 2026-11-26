@@ -121,6 +121,8 @@ def getValue(tokens, pos, variables, outputLines, askInput, functions):
             if syntax.word(tokens, pos) != "AN":
                 break
             pos += 1
+        if syntax.word(tokens, pos) == "MKAY":
+            pos += 1
         return "".join(parts), pos, None
 
     if text == "MAEK":
@@ -161,7 +163,8 @@ def callFunction(tokens, pos, variables, outputLines, askInput, functions):
             if error:
                 return None, pos, error
             arguments.append(value)
-    pos += 1  # mkay, the parser already checked that it is there
+    if syntax.word(tokens, pos) == "MKAY":
+        pos += 1
 
     parameters, bodyPos = functions[name]
     if len(arguments) != len(parameters):
@@ -340,7 +343,7 @@ def statement(tokens, pos, variables, outputLines, askInput, functions):
 
     if text == "VISIBLE":
         # operands are separated by + and each is cast to a YARN
-        # a NOOB operand is an error since NOOB can only be implicitly cast to TROOF
+        # printing NOOB is allowed; other implicit casts keep their normal rules
         line = tokens[pos][2]
         pos += 1
         parts = []
@@ -349,13 +352,18 @@ def statement(tokens, pos, variables, outputLines, askInput, functions):
             value, pos, error = getValue(tokens, pos, variables, outputLines, askInput, functions)
             if error:
                 return pos, "", error
-            piece, error = toYarn(value, tokens, valuePos)
-            if error:
-                return pos, "", error
+            if value is None:
+                piece = "NOOB"
+            else:
+                piece, error = toYarn(value, tokens, valuePos)
+                if error:
+                    return pos, "", error
             parts.append(piece)
             if syntax.getTokenType(tokens, pos) != "Output Separator":
                 break
             pos += 1
+        # keep the last value and its type, after all output operands are evaluated
+        variables["IT"] = value
         # a trailing ! leaves out the newline
         ending = "\n"
         if (pos < len(tokens) and tokens[pos][2] == line

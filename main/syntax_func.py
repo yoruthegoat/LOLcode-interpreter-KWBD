@@ -81,14 +81,14 @@ def checkSameLine(tokens, start, pos, lines):
     if tokens[pos - 1][2] != tokens[start][2]:
         syntaxError(tokens, start, lines, "A statement or expression must stay on one line")
 
-def expression(tokens, pos, lines, depth, allowVariadic=True):
+def expression(tokens, pos, lines, depth, allowVariadic=True, allowMissingMkay=False):
     # read the expression then check its line
     start = pos
-    pos = expressionValue(tokens, pos, lines, depth, allowVariadic)
+    pos = expressionValue(tokens, pos, lines, depth, allowVariadic, allowMissingMkay)
     checkSameLine(tokens, start, pos, lines)
     return pos
 
-def expressionValue(tokens, pos, lines, depth, allowVariadic):
+def expressionValue(tokens, pos, lines, depth, allowVariadic, allowMissingMkay):
     # check what kind of expression follows
     text = word(tokens, pos)
     tokenType = getTokenType(tokens, pos)
@@ -169,8 +169,9 @@ def expressionValue(tokens, pos, lines, depth, allowVariadic):
                 pos = nextToken(tokens, pos, lines, depth + 1)
                 pos = expectToken(tokens, pos, lines, depth + 1, "YR")
                 pos = expression(tokens, pos, lines, depth + 1, False)
-        # every function call must end with mkay
-        pos = expectToken(tokens, pos, lines, depth + 1, "MKAY")
+        # standalone calls may end at the newline; nested calls still need mkay
+        if word(tokens, pos) == "MKAY" or not allowMissingMkay:
+            pos = expectToken(tokens, pos, lines, depth + 1, "MKAY")
 
     else:
         syntaxError(tokens, pos, lines, "Expected an expression")
@@ -393,7 +394,7 @@ def statement(tokens, pos, lines, depth, inFunction=False, canBreak=False,
     else:
         # reaching here means it has to be an expression
         saveLine(lines, depth, "<Expression Statement>")
-        pos = expression(tokens, pos, lines, depth + 1)
+        pos = expression(tokens, pos, lines, depth + 1, allowMissingMkay=True)
         checkEndOfLine(tokens, pos, lines)
 
     # simple statements must finish on their starting line

@@ -2,11 +2,15 @@
 
 Kids with Big Dreams | S2L
 
-Reads a LOLCODE file, identifies tokens, and displays its syntax tree.
+Contributors: see [contributors.txt](contributors.txt).
 
-MILESTONE 2
+Runs LOLCODE programs with lexical, syntax, and semantic analysis. Displays tokens, a syntax tree, program output, and a symbol table.
 
-Run from the project folder. For the GUI, set up PySide6 once:
+Requires Python 3. The GUI also needs PySide6. Checked locally with Python 3.13.13 and PySide6 6.12.0.
+
+Run from the project folder containing `main`.
+
+On Linux/macOS, set up PySide6 once:
 
 ```bash
 python3 -m venv .venv
@@ -21,12 +25,24 @@ source .venv/bin/activate
 python main/gui.py
 ```
 
-Click **Select .lol file**, choose a file from `testcases`, then click **Run**.
+On Windows, set up and launch the GUI:
 
-For terminal-only analysis (no extra packages needed):
-
-```bash
-python3 main/main.py
+```powershell
+py -m venv .venv
+.\.venv\Scripts\python.exe -m pip install PySide6
+.\.venv\Scripts\python.exe main\gui.py
 ```
 
-When asked for a file path, enter `testcases/01_variables.lol`.
+After the first Windows setup, repeat only the last command to launch.
+
+Click **Select .lol file**, choose a file from `testcases_fixed`, then click **Run**. You can edit the code before running. Enter requested input in the dialog, and use **Stop** to end a running program.
+
+Testcase folders:
+
+- `testcases`: original supplied examples.
+- `testcases_fixed`: corrected examples for normal runs.
+- `testcases_bonus`: five simple bonus examples, with expected output in comments.
+
+For terminal execution (no extra packages needed), run `python3 main/main.py` on Linux/macOS or `py main/main.py` on Windows.
+
+When asked for a file path, enter `testcases_fixed/01_variables.lol`. The terminal displays the syntax tree, program output, and final symbol table. Enter any requested input directly in the terminal.
